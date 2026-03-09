@@ -1,0 +1,12 @@
+# Node / npm
+node_modules/
+dist/
+.cache/
+
+# Local env
+.env
+.env.local
+.env.*.local
+
+# Build
+*.local

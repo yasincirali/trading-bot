@@ -1,0 +1,21 @@
+{
+  "_comment": "Copy this file to appsettings.Local.json (gitignored) and fill in your real values.",
+  "ConnectionStrings": {
+    "Default": "Host=localhost;Port=5432;Database=trading_bot;Username=postgres;Password=password"
+  },
+  "Jwt": {
+    "Secret": "REPLACE_WITH_YOUR_OWN_RANDOM_SECRET_MIN_32_CHARS"
+  },
+  "Twilio": {
+    "AccountSid": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "AuthToken": "your_auth_token_here",
+    "PhoneFrom": "+12345678901"
+  },
+  "Smtp": {
+    "Host": "smtp.gmail.com",
+    "Port": 587,
+    "User": "your@gmail.com",
+    "Pass": "your-app-password",
+    "From": "TradingBot <your@gmail.com>"
+  }
+}

@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum OrderType {
+  BUY
+  SELL
+}
+
+enum OrderStatus {
+  PENDING
+  FILLED
+  CANCELLED
+  FAILED
+}
+
+enum NotificationChannel {
+  SMS
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  phone        String?
+  role         Role     @default(USER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders        Order[]
+  positions     Position[]
+  botConfig     BotConfig?
+  notifications Notification[]
+}
+
+model BistSymbol {
+  id        String   @id @default(cuid())
+  ticker    String   @unique
+  name      String
+  sector    String
+  lastPrice Float    @default(0)
+  updatedAt DateTime @updatedAt
+
+  orders    Order[]
+  positions Position[]
+  candles   PriceCandle[]
+}
+
+model PriceCandle {
+  id        String     @id @default(cuid())
+  symbolId  String
+  open      Float
+  high      Float
+  low       Float
+  close     Float
+  volume    Float
+  timestamp DateTime
+
+  symbol BistSymbol @relation(fields: [symbolId], references: [id], onDelete: Cascade)
+
+  @@index([symbolId, timestamp])
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  userId      String
+  symbolId    String
+  type        OrderType
+  quantity    Float
+  price       Float
+  status      OrderStatus @default(PENDING)
+  bankAdapter String      @default("mock")
+  paperTrade  Boolean     @default(true)
+  notes       String?
+  createdAt   DateTime    @default(now())
+  filledAt    DateTime?
+
+  user   User       @relation(fields: [userId], references: [id])
+  symbol BistSymbol @relation(fields: [symbolId], references: [id])
+}
+
+model Position {
+  id            String   @id @default(cuid())
+  userId        String
+  symbolId      String
+  quantity      Float
+  avgPrice      Float
+  unrealizedPnl Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user   User       @relation(fields: [userId], references: [id])
+  symbol BistSymbol @relation(fields: [symbolId], references: [id])
+
+  @@unique([userId, symbolId])
+}
+
+model BotConfig {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  enabled             Boolean  @default(false)
+  confidenceThreshold Float    @default(0.65)
+  maxOrderSizeTry     Float    @default(10000)
+  dailyLossLimitTry   Float    @default(5000)
+  tickIntervalMs      Int      @default(5000)
+  watchlist           String[] @default([])
+  updatedAt           DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Notification {
+  id        String              @id @default(cuid())
+  userId    String
+  channel   NotificationChannel
+  message   String
+  status    NotificationStatus  @default(PENDING)
+  sentAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}

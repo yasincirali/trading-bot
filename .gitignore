@@ -1,0 +1,59 @@
+# ============================================================
+# Secrets & local environment — NEVER commit these
+# ============================================================
+.env
+.env.local
+.env.*.local
+!.env.example
+backend/appsettings.Local.json
+backend/appsettings.Production.json
+
+# ============================================================
+# Build outputs
+# ============================================================
+backend/bin/
+backend/obj/
+frontend/dist/
+frontend/node_modules/
+node_modules/
+
+# EF Core — keep Migrations/ in source control (migration history)
+# To ignore: uncomment the next line
+# backend/Migrations/
+
+# ============================================================
+# IDE & editor files
+# ============================================================
+.vs/
+*.user
+*.suo
+*.DotSettings.user
+.idea/
+.vscode/settings.json
+
+# ============================================================
+# OS generated files
+# ============================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ============================================================
+# Claude Code local config (project settings.json is ok to keep)
+# ============================================================
+.claude/settings.local.json
+
+# ============================================================
+# Docker volumes
+# ============================================================
+postgres_data/
+
+# ============================================================
+# Logs
+# ============================================================
+*.log
+logs/

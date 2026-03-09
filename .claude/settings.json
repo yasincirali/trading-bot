@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell.exe -NoProfile -Command \"Get-Service -Name ''postgresql*'' -ErrorAction SilentlyContinue\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(powershell.exe -NoProfile -Command \":*)",
+      "Bash(cmd.exe /c \"sc query type= all state= all | findstr /i postgres\")",
+      "Bash(docker version)",
+      "Read(//c/Users/vasin/AppData/Local/Docker/log/host/**)",
+      "Bash(docker compose up --build -d)",
+      "Bash(dotnet ef migrations add InitialCreate)",
+      "Bash(docker compose up --build -d backend)"
+    ]
+  }
+}

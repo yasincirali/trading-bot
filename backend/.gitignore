@@ -1,0 +1,19 @@
+# C# / .NET
+bin/
+obj/
+*.user
+*.suo
+*.DotSettings.user
+.vs/
+
+# Local secrets override — copy appsettings.Local.json.example → appsettings.Local.json
+appsettings.Local.json
+appsettings.Production.json
+
+# NuGet
+*.nupkg
+.nuget/
+
+# Test results
+TestResults/
+coverage/
