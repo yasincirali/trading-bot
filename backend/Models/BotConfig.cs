@@ -10,6 +10,8 @@ public class BotConfig
     public double DailyLossLimitTry { get; set; } = 5000;
     public int TickIntervalMs { get; set; } = 5000;
     public string[] Watchlist { get; set; } = [];
+    public bool NotifyOnSignal { get; set; } = true;
+    public bool NotifyOnOrder { get; set; } = true;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     public User User { get; set; } = null!;

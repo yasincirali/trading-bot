@@ -26,4 +26,14 @@ export const botApi = {
     const { data } = await client.put<BotConfig>('/bot/config', config);
     return data;
   },
+
+  async addToWatchlist(ticker: string) {
+    const { data } = await client.post<BotConfig>(`/bot/watchlist/${ticker}`);
+    return data;
+  },
+
+  async removeFromWatchlist(ticker: string) {
+    const { data } = await client.delete<BotConfig>(`/bot/watchlist/${ticker}`);
+    return data;
+  },
 };

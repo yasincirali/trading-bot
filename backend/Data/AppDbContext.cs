@@ -26,6 +26,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         // Store enums as strings
         modelBuilder.Entity<User>().Property(u => u.Role).HasConversion<string>();
+        modelBuilder.Entity<BistSymbol>().Property(s => s.Type).HasConversion<string>();
         modelBuilder.Entity<Order>().Property(o => o.Type).HasConversion<string>();
         modelBuilder.Entity<Order>().Property(o => o.Status).HasConversion<string>();
         modelBuilder.Entity<Notification>().Property(n => n.Channel).HasConversion<string>();

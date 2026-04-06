@@ -55,6 +55,13 @@ var frontendUrl = builder.Configuration["FrontendUrl"] ?? "http://localhost:5173
 builder.Services.AddCors(opt => opt.AddDefaultPolicy(p =>
     p.WithOrigins(frontendUrl).AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
 
+// ── HTTP Clients ──────────────────────────────────────────────────────────────
+builder.Services.AddHttpClient("Telegram");
+builder.Services.AddHttpClient("Yahoo");
+
+// ── Market Data (Yahoo Finance, free) ─────────────────────────────────────────
+builder.Services.AddSingleton<MarketDataService>();
+
 // ── Services ──────────────────────────────────────────────────────────────────
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<SymbolService>();
@@ -87,8 +94,9 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var marketData = scope.ServiceProvider.GetRequiredService<MarketDataService>();
     await db.Database.MigrateAsync();
-    await DbSeeder.SeedAsync(db);
+    await DbSeeder.SeedAsync(db, marketData);
 }
 
 // ── Pipeline ──────────────────────────────────────────────────────────────────

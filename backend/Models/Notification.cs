@@ -1,6 +1,6 @@
 namespace TradingBot.Models;
 
-public enum NotificationChannel { SMS, EMAIL }
+public enum NotificationChannel { SMS, EMAIL, TELEGRAM }
 public enum NotificationStatus { PENDING, SENT, FAILED }
 
 public class Notification

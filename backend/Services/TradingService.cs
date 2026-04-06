@@ -128,12 +128,12 @@ public class TradingService(AppDbContext db, BankAdapterFactory bankFactory, ICo
     private static OrderDto ToOrderDto(Order o) => new(
         o.Id, o.UserId, o.SymbolId, o.Type, o.Quantity, o.Price, o.Status,
         o.BankAdapter, o.PaperTrade, o.Notes, o.CreatedAt, o.FilledAt,
-        new SymbolDto(o.Symbol.Id, o.Symbol.Ticker, o.Symbol.Name, o.Symbol.Sector, o.Symbol.LastPrice, o.Symbol.UpdatedAt)
+        new SymbolDto(o.Symbol.Id, o.Symbol.Ticker, o.Symbol.Name, o.Symbol.Sector, o.Symbol.Type.ToString(), o.Symbol.LastPrice, o.Symbol.UpdatedAt)
     );
 
     private static PositionDto ToPositionDto(Position p, double currentPrice) => new(
         p.Id, p.UserId, p.SymbolId, p.Quantity, p.AvgPrice, p.UnrealizedPnl, currentPrice,
         p.CreatedAt, p.UpdatedAt,
-        new SymbolDto(p.Symbol.Id, p.Symbol.Ticker, p.Symbol.Name, p.Symbol.Sector, p.Symbol.LastPrice, p.Symbol.UpdatedAt)
+        new SymbolDto(p.Symbol.Id, p.Symbol.Ticker, p.Symbol.Name, p.Symbol.Sector, p.Symbol.Type.ToString(), p.Symbol.LastPrice, p.Symbol.UpdatedAt)
     );
 }

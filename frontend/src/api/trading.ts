@@ -23,6 +23,15 @@ export const symbolsApi = {
     const { data } = await client.get<AggregatedSignal>(`/symbols/${ticker}/signals`);
     return data;
   },
+
+  async add(ticker: string, type?: 'STOCK' | 'FUND') {
+    const { data } = await client.post<BistSymbol>('/symbols', { ticker, type });
+    return data;
+  },
+
+  async remove(ticker: string) {
+    await client.delete(`/symbols/${ticker}`);
+  },
 };
 
 export const ordersApi = {

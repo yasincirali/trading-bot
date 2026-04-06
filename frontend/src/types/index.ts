@@ -1,4 +1,5 @@
 export type SignalType = 'BUY' | 'SELL' | 'NEUTRAL';
+export type SymbolType = 'STOCK' | 'FUND';
 export type OrderType = 'BUY' | 'SELL';
 export type OrderStatus = 'PENDING' | 'FILLED' | 'CANCELLED' | 'FAILED';
 export type UserRole = 'USER' | 'ADMIN';
@@ -22,6 +23,7 @@ export interface BistSymbol {
   ticker: string;
   name: string;
   sector: string;
+  type: SymbolType;
   lastPrice: number;
   updatedAt: string;
 }

@@ -1,11 +1,14 @@
 namespace TradingBot.Models;
 
+public enum SymbolType { STOCK, FUND }
+
 public class BistSymbol
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public required string Ticker { get; set; }
     public required string Name { get; set; }
     public required string Sector { get; set; }
+    public SymbolType Type { get; set; } = SymbolType.STOCK;
     public double LastPrice { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

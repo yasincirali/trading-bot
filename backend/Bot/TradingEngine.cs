@@ -4,6 +4,7 @@ using TradingBot.Data;
 using TradingBot.Hubs;
 using TradingBot.Indicators;
 using TradingBot.Models;
+using TradingBot.Services;
 
 namespace TradingBot.Bot;
 
@@ -13,7 +14,6 @@ public class TradingEngine(
     ILogger<TradingEngine> logger) : BackgroundService
 {
     private readonly Dictionary<Guid, CancellationTokenSource> _activeBots = new();
-    private readonly Random _rng = new();
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -58,6 +58,7 @@ public class TradingEngine(
                 await using var scope = scopeFactory.CreateAsyncScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var orderExecutor = scope.ServiceProvider.GetRequiredService<OrderExecutor>();
+                var marketData = scope.ServiceProvider.GetRequiredService<MarketDataService>();
 
                 var cfg = await db.BotConfigs.FirstOrDefaultAsync(c => c.UserId == userId, token);
                 if (cfg == null || !cfg.Enabled)
@@ -66,7 +67,18 @@ public class TradingEngine(
                     return;
                 }
 
-                await RunTickAsync(userId, cfg, db, orderExecutor, token);
+                // Batch-fetch live prices for the entire watchlist (single HTTP call)
+                // Missing tickers (API failure) will fall back to last known DB price
+                var livePrices = await marketData.GetCurrentPricesAsync(cfg.Watchlist);
+                var symbols = await db.BistSymbols
+                    .Where(s => cfg.Watchlist.Contains(s.Ticker))
+                    .ToListAsync(token);
+                foreach (var sym in symbols)
+                    if (!livePrices.ContainsKey(sym.Ticker) && sym.LastPrice > 0)
+                        livePrices[sym.Ticker] = sym.LastPrice;
+
+                var notificationService = scope.ServiceProvider.GetRequiredService<NotificationService>();
+                await RunTickAsync(userId, cfg, db, orderExecutor, notificationService, marketData, livePrices, token);
                 await EmitPriceUpdatesAsync(userId, cfg.Watchlist, db);
                 await Task.Delay(cfg.TickIntervalMs, token);
             }
@@ -79,13 +91,21 @@ public class TradingEngine(
         }
     }
 
-    private async Task RunTickAsync(Guid userId, BotConfig cfg, AppDbContext db, OrderExecutor executor, CancellationToken token)
+    private async Task RunTickAsync(
+        Guid userId, BotConfig cfg, AppDbContext db,
+        OrderExecutor executor, NotificationService notifications,
+        MarketDataService marketData, Dictionary<string, double> livePrices,
+        CancellationToken token)
     {
         foreach (var ticker in cfg.Watchlist)
         {
             token.ThrowIfCancellationRequested();
             try
             {
+                // Store the live price as a new candle (replaces simulation)
+                if (livePrices.TryGetValue(ticker, out var livePrice))
+                    await StoreLivePriceAsync(ticker, livePrice, db);
+
                 var candles = await db.PriceCandles
                     .Where(c => c.Symbol.Ticker == ticker)
                     .OrderByDescending(c => c.Timestamp)
@@ -107,9 +127,17 @@ public class TradingEngine(
                 }, token);
 
                 if (signal.Confidence >= cfg.ConfidenceThreshold && signal.Signal != SignalType.NEUTRAL)
-                    await executor.ExecuteAsync(userId, ticker, signal, cfg.MaxOrderSizeTry, cfg.DailyLossLimitTry);
+                {
+                    int estimatedQty = (int)(cfg.MaxOrderSizeTry / Math.Max(currentPrice, 0.01));
 
-                await SimulatePriceMoveAsync(ticker, currentPrice, db);
+                    if (cfg.NotifyOnSignal)
+                    {
+                        bool paperTrade = executor.IsPaperTrade();
+                        _ = notifications.SendTradeSignalAsync(userId, new TradeSignalInfo(ticker, signal, currentPrice, estimatedQty, paperTrade));
+                    }
+
+                    await executor.ExecuteAsync(userId, ticker, signal, cfg.MaxOrderSizeTry, cfg.DailyLossLimitTry, cfg.NotifyOnOrder ? notifications : null);
+                }
             }
             catch (Exception ex)
             {
@@ -118,27 +146,38 @@ public class TradingEngine(
         }
     }
 
-    private async Task SimulatePriceMoveAsync(string ticker, double currentPrice, AppDbContext db)
+    private static async Task StoreLivePriceAsync(string ticker, double price, AppDbContext db)
     {
-        double change = (_rng.NextDouble() - 0.5) * currentPrice * 0.003;
-        double newPrice = Math.Max(currentPrice + change, 0.01);
-
         var symbol = await db.BistSymbols.FirstOrDefaultAsync(s => s.Ticker == ticker);
-        if (symbol == null) return;
+        if (symbol == null || price <= 0) return;
 
-        symbol.LastPrice = newPrice;
+        // Always keep LastPrice current so the UI always shows something
+        symbol.LastPrice = price;
         symbol.UpdatedAt = DateTime.UtcNow;
 
-        db.PriceCandles.Add(new PriceCandle
+        // Only add a new candle if the price changed or it has been > 1 hour
+        // (avoids thousands of identical candles when market is closed)
+        var lastCandle = await db.PriceCandles
+            .Where(c => c.SymbolId == symbol.Id)
+            .OrderByDescending(c => c.Timestamp)
+            .FirstOrDefaultAsync();
+
+        bool priceChanged = lastCandle == null || Math.Abs(lastCandle.Close - price) > 0.001;
+        bool stale = lastCandle == null || DateTime.UtcNow - lastCandle.Timestamp > TimeSpan.FromHours(1);
+
+        if (priceChanged || stale)
         {
-            SymbolId = symbol.Id,
-            Open = currentPrice,
-            High = Math.Max(currentPrice, newPrice) * (1 + _rng.NextDouble() * 0.002),
-            Low = Math.Min(currentPrice, newPrice) * (1 - _rng.NextDouble() * 0.002),
-            Close = newPrice,
-            Volume = _rng.Next(10000, 60000),
-            Timestamp = DateTime.UtcNow,
-        });
+            db.PriceCandles.Add(new PriceCandle
+            {
+                SymbolId = symbol.Id,
+                Open = lastCandle?.Close ?? price,
+                High = Math.Max(lastCandle?.Close ?? price, price),
+                Low = Math.Min(lastCandle?.Close ?? price, price),
+                Close = price,
+                Volume = 0,
+                Timestamp = DateTime.UtcNow,
+            });
+        }
 
         await db.SaveChangesAsync();
     }

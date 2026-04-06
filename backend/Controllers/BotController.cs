@@ -5,6 +5,7 @@ using TradingBot.Bot;
 using TradingBot.Data;
 using TradingBot.DTOs;
 using TradingBot.Models;
+using TradingBot.Services;
 
 namespace TradingBot.Controllers;
 
@@ -64,6 +65,45 @@ public class BotController(AppDbContext db, TradingEngine engine, IConfiguration
         if (req.Watchlist != null) cfg.Watchlist = req.Watchlist;
         cfg.UpdatedAt = DateTime.UtcNow;
 
+        await db.SaveChangesAsync();
+        return Ok(ToDto(cfg));
+    }
+
+    /// Add a ticker to the watchlist immediately (bot picks it up on next tick).
+    /// If the symbol doesn't exist in the system, it is created automatically from Yahoo Finance.
+    [HttpPost("watchlist/{ticker}")]
+    public async Task<IActionResult> AddToWatchlist(string ticker,
+        [FromServices] SymbolService symbolService,
+        [FromServices] MarketDataService marketData)
+    {
+        ticker = ticker.ToUpper().Trim();
+
+        if (!await db.BistSymbols.AnyAsync(s => s.Ticker == ticker))
+            await symbolService.AddSymbolAsync(ticker, null, null, null, marketData);
+
+        var cfg = await db.BotConfigs.FirstOrDefaultAsync(c => c.UserId == UserId)
+            ?? throw new AppException("Bot config not found", 404);
+
+        if (!cfg.Watchlist.Contains(ticker))
+        {
+            cfg.Watchlist = [.. cfg.Watchlist, ticker];
+            cfg.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        return Ok(ToDto(cfg));
+    }
+
+    /// Remove a ticker from the watchlist immediately.
+    [HttpDelete("watchlist/{ticker}")]
+    public async Task<IActionResult> RemoveFromWatchlist(string ticker)
+    {
+        ticker = ticker.ToUpper().Trim();
+        var cfg = await db.BotConfigs.FirstOrDefaultAsync(c => c.UserId == UserId)
+            ?? throw new AppException("Bot config not found", 404);
+
+        cfg.Watchlist = cfg.Watchlist.Where(t => t != ticker).ToArray();
+        cfg.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         return Ok(ToDto(cfg));
     }

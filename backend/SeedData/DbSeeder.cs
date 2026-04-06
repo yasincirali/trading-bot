@@ -1,5 +1,6 @@
 using TradingBot.Data;
 using TradingBot.Models;
+using TradingBot.Services;
 
 namespace TradingBot.SeedData;
 
@@ -19,7 +20,7 @@ public static class DbSeeder
         ("AKBNK", "Akbank", "Bankacılık", 62.7),
     ];
 
-    public static async Task SeedAsync(AppDbContext db)
+    public static async Task SeedAsync(AppDbContext db, MarketDataService? marketData = null)
     {
         // Admin user
         if (!db.Users.Any(u => u.Email == "admin@tradingbot.tr"))
@@ -66,16 +67,42 @@ public static class DbSeeder
 
             if (db.PriceCandles.Any(c => c.SymbolId == symbol.Id)) continue;
 
-            var candles = GenerateCandles(symbol.Id, basePrice, 200, rng);
+            IReadOnlyList<PriceCandle> candles;
+
+            // Try real Yahoo Finance data first, fall back to synthetic
+            if (marketData != null)
+            {
+                var liveData = await marketData.GetHistoricalAsync(ticker, 200);
+                if (liveData.Count >= 30)
+                {
+                    candles = liveData.Select(d => new PriceCandle
+                    {
+                        SymbolId = symbol.Id,
+                        Open = d.Open, High = d.High, Low = d.Low, Close = d.Close,
+                        Volume = d.Volume, Timestamp = d.Timestamp,
+                    }).ToList();
+                    Console.WriteLine($"[Seed] {ticker}: {candles.Count} real candles from Yahoo Finance, last={candles[^1].Close:F2} TRY");
+                }
+                else
+                {
+                    Console.WriteLine($"[Seed] {ticker}: Yahoo Finance returned {liveData.Count} candles, falling back to synthetic");
+                    candles = GenerateCandles(symbol.Id, basePrice, 200, rng);
+                }
+            }
+            else
+            {
+                candles = GenerateCandles(symbol.Id, basePrice, 200, rng);
+                Console.WriteLine($"[Seed] {ticker}: {candles.Count} synthetic candles, last={candles[^1].Close:F2} TRY");
+            }
+
             db.PriceCandles.AddRange(candles);
             symbol.LastPrice = candles[^1].Close;
             symbol.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
-            Console.WriteLine($"[Seed] {ticker}: {candles.Length} candles, last={candles[^1].Close:F2} TRY");
         }
     }
 
-    private static PriceCandle[] GenerateCandles(Guid symbolId, double basePrice, int days, Random rng)
+    private static IReadOnlyList<PriceCandle> GenerateCandles(Guid symbolId, double basePrice, int days, Random rng)
     {
         var candles = new PriceCandle[days + 1];
         double price = basePrice;

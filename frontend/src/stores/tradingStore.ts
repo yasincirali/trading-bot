@@ -23,6 +23,8 @@ interface TradingState {
   updateSignal: (ticker: string, signal: AggregatedSignal) => void;
   placeOrder: (ticker: string, type: 'BUY' | 'SELL', quantity: number, bankAdapter?: string) => Promise<Order>;
   cancelOrder: (id: string) => Promise<void>;
+  addSymbol: (ticker: string, type?: 'STOCK' | 'FUND') => Promise<BistSymbol>;
+  removeSymbol: (ticker: string) => Promise<void>;
 }
 
 export const useTradingStore = create<TradingState>((set, get) => ({
@@ -80,6 +82,23 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     await ordersApi.cancel(id);
     set(state => ({
       orders: state.orders.map(o => o.id === id ? { ...o, status: 'CANCELLED' } : o),
+    }));
+  },
+
+  addSymbol: async (ticker, type) => {
+    const symbol = await symbolsApi.add(ticker, type);
+    set(state => ({
+      symbols: state.symbols.some(s => s.ticker === symbol.ticker)
+        ? state.symbols
+        : [...state.symbols, symbol],
+    }));
+    return symbol;
+  },
+
+  removeSymbol: async (ticker) => {
+    await symbolsApi.remove(ticker);
+    set(state => ({
+      symbols: state.symbols.filter(s => s.ticker !== ticker),
     }));
   },
 }));

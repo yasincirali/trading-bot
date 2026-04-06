@@ -3,6 +3,7 @@ using TradingBot.Banks;
 using TradingBot.Data;
 using TradingBot.Indicators;
 using TradingBot.Models;
+using TradingBot.Services;
 
 namespace TradingBot.Bot;
 
@@ -26,9 +27,11 @@ public class OrderExecutor(AppDbContext db, BankAdapterFactory bankFactory, ICon
         }
     }
 
-    public async Task ExecuteAsync(Guid userId, string ticker, AggregatedSignal signal, double maxOrderSizeTry, double dailyLossLimitTry)
+    public bool IsPaperTrade() => config.GetValue<bool>("Trading:PaperTradingMode", true);
+
+    public async Task ExecuteAsync(Guid userId, string ticker, AggregatedSignal signal, double maxOrderSizeTry, double dailyLossLimitTry, NotificationService? notifications = null)
     {
-        bool paperTrade = config.GetValue<bool>("Trading:PaperTradingMode", true);
+        bool paperTrade = IsPaperTrade();
 
         if (!IsWithinTradingHours())
         {
@@ -88,7 +91,12 @@ public class OrderExecutor(AppDbContext db, BankAdapterFactory bankFactory, ICon
             await db.SaveChangesAsync();
 
             if (result.Status == OrderStatus.FILLED)
+            {
                 await UpsertPositionAsync(userId, symbol.Id, orderType, quantity, result.FilledPrice);
+
+                if (notifications != null)
+                    _ = notifications.SendOrderFilledAsync(userId, new OrderFilledInfo(ticker, orderType, quantity, result.FilledPrice, adapter.Name, paperTrade));
+            }
 
             logger.LogInformation("{Type} {Qty} {Ticker} @ {Price:F2} — {Status}", orderType, quantity, ticker, result.FilledPrice, result.Status);
         }

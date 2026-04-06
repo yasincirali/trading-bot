@@ -11,6 +11,8 @@ interface BotState {
   startBot: () => Promise<void>;
   stopBot: () => Promise<void>;
   updateConfig: (config: Partial<BotConfig>) => Promise<void>;
+  addToWatchlist: (ticker: string) => Promise<void>;
+  removeFromWatchlist: (ticker: string) => Promise<void>;
   addTick: (tick: BotTickEvent) => void;
   setRunning: (running: boolean) => void;
 }
@@ -46,6 +48,20 @@ export const useBotStore = create<BotState>((set, get) => ({
 
   updateConfig: async (config) => {
     const updated = await botApi.updateConfig(config);
+    set(state => ({
+      status: state.status ? { ...state.status, config: updated } : null,
+    }));
+  },
+
+  addToWatchlist: async (ticker) => {
+    const updated = await botApi.addToWatchlist(ticker);
+    set(state => ({
+      status: state.status ? { ...state.status, config: updated } : null,
+    }));
+  },
+
+  removeFromWatchlist: async (ticker) => {
+    const updated = await botApi.removeFromWatchlist(ticker);
     set(state => ({
       status: state.status ? { ...state.status, config: updated } : null,
     }));
