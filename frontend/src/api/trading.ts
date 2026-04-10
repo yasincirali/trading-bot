@@ -24,7 +24,7 @@ export const symbolsApi = {
     return data;
   },
 
-  async add(ticker: string, type?: 'STOCK' | 'FUND') {
+  async add(ticker: string, type?: 'STOCK' | 'FUND' | 'FOREX' | 'COMMODITY') {
     const { data } = await client.post<BistSymbol>('/symbols', { ticker, type });
     return data;
   },

@@ -59,10 +59,14 @@ public class SymbolService(AppDbContext db)
         var existing = await db.BistSymbols.FirstOrDefaultAsync(s => s.Ticker == ticker);
         if (existing != null) return ToDto(existing);
 
-        // Fetch metadata from Yahoo Finance
-        var info = await marketData.GetSymbolInfoAsync(ticker);
+        // Determine type first so we can pass it to Yahoo Finance
+        var symbolType = ParseType(type);
 
-        var symbolType = ParseType(type ?? info?.Type);
+        // Fetch metadata from Yahoo Finance (pass type hint for correct ticker format)
+        var info = await marketData.GetSymbolInfoAsync(ticker, symbolType);
+        if (symbolType == SymbolType.STOCK && info?.Type != null)
+            symbolType = ParseType(info.Type); // let Yahoo override STOCK→FUND if detected
+
         var symbol = new BistSymbol
         {
             Ticker = ticker,
@@ -75,7 +79,7 @@ public class SymbolService(AppDbContext db)
         await db.SaveChangesAsync();
 
         // Seed historical candles
-        var candles = await marketData.GetHistoricalAsync(ticker, 200);
+        var candles = await marketData.GetHistoricalAsync(ticker, 200, symbolType);
         if (candles.Count >= 1)
         {
             db.PriceCandles.AddRange(candles.Select(d => new PriceCandle
@@ -108,8 +112,13 @@ public class SymbolService(AppDbContext db)
         await db.SaveChangesAsync();
     }
 
-    private static SymbolType ParseType(string? type) =>
-        type?.ToUpper() == "FUND" ? SymbolType.FUND : SymbolType.STOCK;
+    private static SymbolType ParseType(string? type) => type?.ToUpper() switch
+    {
+        "FUND"      => SymbolType.FUND,
+        "FOREX"     => SymbolType.FOREX,
+        "COMMODITY" => SymbolType.COMMODITY,
+        _           => SymbolType.STOCK,
+    };
 
     private static SymbolDto ToDto(BistSymbol s) =>
         new(s.Id, s.Ticker, s.Name, s.Sector, s.Type.ToString(), s.LastPrice, s.UpdatedAt);

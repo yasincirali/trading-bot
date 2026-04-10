@@ -16,7 +16,7 @@ export function BotConfigForm() {
   const [loading, setLoading] = useState(false);
 
   const [newTicker, setNewTicker] = useState('');
-  const [newType, setNewType] = useState<'STOCK' | 'FUND'>('STOCK');
+  const [newType, setNewType] = useState<'STOCK' | 'FUND' | 'FOREX' | 'COMMODITY'>('STOCK');
   const [addingTicker, setAddingTicker] = useState<string | null>(null);
   const [removingTicker, setRemovingTicker] = useState<string | null>(null);
 
@@ -53,7 +53,7 @@ export function BotConfigForm() {
     }
   };
 
-  const handleAdd = async (ticker: string, type?: 'STOCK' | 'FUND') => {
+  const handleAdd = async (ticker: string, type?: 'STOCK' | 'FUND' | 'FOREX' | 'COMMODITY') => {
     const t = ticker.toUpperCase().trim();
     if (!t) return;
     setAddingTicker(t);
@@ -158,7 +158,7 @@ export function BotConfigForm() {
                 {ticker}
                 {sym && (
                   <span className="text-[10px] text-blue-400/70 font-medium">
-                    {sym.type === 'FUND' ? 'FON' : 'BIST'}
+                    {sym.type === 'FUND' ? 'FON' : sym.type === 'FOREX' ? 'DÖVİZ' : sym.type === 'COMMODITY' ? 'EMTİA' : 'BIST'}
                   </span>
                 )}
                 <button

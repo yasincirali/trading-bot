@@ -23,7 +23,7 @@ interface TradingState {
   updateSignal: (ticker: string, signal: AggregatedSignal) => void;
   placeOrder: (ticker: string, type: 'BUY' | 'SELL', quantity: number, bankAdapter?: string) => Promise<Order>;
   cancelOrder: (id: string) => Promise<void>;
-  addSymbol: (ticker: string, type?: 'STOCK' | 'FUND') => Promise<BistSymbol>;
+  addSymbol: (ticker: string, type?: 'STOCK' | 'FUND' | 'FOREX' | 'COMMODITY') => Promise<BistSymbol>;
   removeSymbol: (ticker: string) => Promise<void>;
 }
 

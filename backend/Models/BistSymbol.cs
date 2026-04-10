@@ -1,6 +1,6 @@
 namespace TradingBot.Models;
 
-public enum SymbolType { STOCK, FUND }
+public enum SymbolType { STOCK, FUND, FOREX, COMMODITY }
 
 public class BistSymbol
 {

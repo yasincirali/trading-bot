@@ -1,4 +1,5 @@
 using System.Text.Json;
+using TradingBot.Models;
 
 namespace TradingBot.Services;
 
@@ -13,23 +14,51 @@ public class MarketDataService(IHttpClientFactory httpFactory, ILogger<MarketDat
 
     public record CandleData(DateTime Timestamp, double Open, double High, double Low, double Close, double Volume);
 
+    // ── Yahoo ticker mapping ──────────────────────────────────────────────────
+
+    // Static map for commodities whose Yahoo ticker doesn't follow a pattern
+    private static readonly Dictionary<string, string> _commodityYahooMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["ALTIN"]  = "GC=F",   // Gold futures (USD/oz)
+        ["GUMUS"]  = "SI=F",   // Silver futures (USD/oz)
+        ["PETROL"] = "CL=F",   // WTI Crude Oil (USD/bbl)
+        ["BRENT"]  = "BZ=F",   // Brent Crude Oil (USD/bbl)
+    };
+
+    private static string ToYahooTicker(string ticker, SymbolType type) => type switch
+    {
+        SymbolType.FOREX     => $"{ticker}=X",
+        SymbolType.COMMODITY => _commodityYahooMap.TryGetValue(ticker, out var y) ? y : $"{ticker}=F",
+        _                    => $"{ticker}.IS",   // STOCK, FUND
+    };
+
+    // Reverse: given a Yahoo ticker, return the internal ticker stored in DB
+    private static string FromYahooTicker(string yahooTicker) =>
+        yahooTicker.EndsWith("=X") ? yahooTicker[..^2] :   // USDTRY=X → USDTRY
+        yahooTicker.EndsWith(".IS") ? yahooTicker[..^3] :  // THYAO.IS → THYAO
+        _reverseMap.TryGetValue(yahooTicker, out var t) ? t : yahooTicker;
+
+    // Build reverse commodity map once at startup
+    private static readonly Dictionary<string, string> _reverseMap =
+        _commodityYahooMap.ToDictionary(kv => kv.Value, kv => kv.Key, StringComparer.OrdinalIgnoreCase);
+
     // ── Batch current prices ──────────────────────────────────────────────────
 
-    public async Task<Dictionary<string, double>> GetCurrentPricesAsync(IEnumerable<string> bistTickers)
+    public async Task<Dictionary<string, double>> GetCurrentPricesAsync(IEnumerable<BistSymbol> bistSymbols)
     {
-        var tickers = bistTickers.ToList();
+        var symbols = bistSymbols.ToList();
         var result = new Dictionary<string, double>();
-        var uncached = new List<string>();
+        var uncached = new List<(string Ticker, SymbolType Type)>();
         var now = DateTime.UtcNow;
 
         lock (_cacheLock)
         {
-            foreach (var t in tickers)
+            foreach (var s in symbols)
             {
-                if (_cache.TryGetValue(t, out var c) && now - c.At < _cacheTtl)
-                    result[t] = c.Price;
+                if (_cache.TryGetValue(s.Ticker, out var c) && now - c.At < _cacheTtl)
+                    result[s.Ticker] = c.Price;
                 else
-                    uncached.Add(t);
+                    uncached.Add((s.Ticker, s.Type));
             }
         }
 
@@ -37,9 +66,9 @@ public class MarketDataService(IHttpClientFactory httpFactory, ILogger<MarketDat
 
         try
         {
-            var symbols = string.Join(",", uncached.Select(t => $"{t}.IS"));
+            var yahooSymbols = string.Join(",", uncached.Select(u => ToYahooTicker(u.Ticker, u.Type)));
             using var client = CreateClient();
-            var json = await client.GetStringAsync($"{Base}/v7/finance/quote?symbols={Uri.EscapeDataString(symbols)}");
+            var json = await client.GetStringAsync($"{Base}/v7/finance/quote?symbols={Uri.EscapeDataString(yahooSymbols)}");
             using var doc = JsonDocument.Parse(json);
 
             var quotes = doc.RootElement
@@ -51,13 +80,21 @@ public class MarketDataService(IHttpClientFactory httpFactory, ILogger<MarketDat
             {
                 foreach (var q in quotes)
                 {
-                    var sym = q.GetProperty("symbol").GetString() ?? "";
-                    var bistTicker = sym.Replace(".IS", "");
+                    var yahooSym = q.GetProperty("symbol").GetString() ?? "";
+                    var internalTicker = FromYahooTicker(yahooSym);
+
+                    // Also try matching via our uncached list (in case reverse-map misses something)
+                    if (!uncached.Any(u => u.Ticker.Equals(internalTicker, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var match = uncached.FirstOrDefault(u => ToYahooTicker(u.Ticker, u.Type).Equals(yahooSym, StringComparison.OrdinalIgnoreCase));
+                        if (match != default) internalTicker = match.Ticker;
+                    }
+
                     if (!q.TryGetProperty("regularMarketPrice", out var priceEl)) continue;
                     var price = priceEl.GetDouble();
                     if (price <= 0) continue;
-                    result[bistTicker] = price;
-                    _cache[bistTicker] = (price, now);
+                    result[internalTicker] = price;
+                    _cache[internalTicker] = (price, now);
                 }
             }
 
@@ -73,15 +110,15 @@ public class MarketDataService(IHttpClientFactory httpFactory, ILogger<MarketDat
 
     // ── Historical daily candles ──────────────────────────────────────────────
 
-    public async Task<List<CandleData>> GetHistoricalAsync(string bistTicker, int days = 200)
+    public async Task<List<CandleData>> GetHistoricalAsync(string ticker, int days = 200, SymbolType type = SymbolType.STOCK)
     {
         var result = new List<CandleData>();
         try
         {
-            var symbol = $"{bistTicker}.IS";
+            var yahooTicker = ToYahooTicker(ticker, type);
             var range = days <= 252 ? "1y" : "2y";
             using var client = CreateClient();
-            var json = await client.GetStringAsync($"{Base}/v8/finance/chart/{symbol}?interval=1d&range={range}");
+            var json = await client.GetStringAsync($"{Base}/v8/finance/chart/{Uri.EscapeDataString(yahooTicker)}?interval=1d&range={range}");
             using var doc = JsonDocument.Parse(json);
 
             var chartResult = doc.RootElement
@@ -111,15 +148,14 @@ public class MarketDataService(IHttpClientFactory httpFactory, ILogger<MarketDat
                 result.Add(new CandleData(ts, open, high, low, close, volume));
             }
 
-            // Keep only the last `days` candles
             if (result.Count > days)
                 result = result.GetRange(result.Count - days, days);
 
-            logger.LogInformation("[MarketData] {Ticker}: fetched {Count} historical candles from Yahoo Finance", bistTicker, result.Count);
+            logger.LogInformation("[MarketData] {Ticker}: fetched {Count} historical candles from Yahoo Finance", ticker, result.Count);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "[MarketData] Historical fetch failed for {Ticker}", bistTicker);
+            logger.LogWarning(ex, "[MarketData] Historical fetch failed for {Ticker}", ticker);
         }
 
         return result;
@@ -129,13 +165,13 @@ public class MarketDataService(IHttpClientFactory httpFactory, ILogger<MarketDat
 
     public record SymbolInfo(string Name, string Sector, string Type, double Price);
 
-    public async Task<SymbolInfo?> GetSymbolInfoAsync(string bistTicker)
+    public async Task<SymbolInfo?> GetSymbolInfoAsync(string ticker, SymbolType typeHint = SymbolType.STOCK)
     {
         try
         {
-            var symbol = $"{bistTicker}.IS";
+            var yahooTicker = ToYahooTicker(ticker, typeHint);
             using var client = CreateClient();
-            var json = await client.GetStringAsync($"{Base}/v7/finance/quote?symbols={Uri.EscapeDataString(symbol)}");
+            var json = await client.GetStringAsync($"{Base}/v7/finance/quote?symbols={Uri.EscapeDataString(yahooTicker)}");
             using var doc = JsonDocument.Parse(json);
 
             var results = doc.RootElement
@@ -147,21 +183,26 @@ public class MarketDataService(IHttpClientFactory httpFactory, ILogger<MarketDat
 
             var name = q.TryGetProperty("shortName", out var sn) ? sn.GetString()
                      : q.TryGetProperty("longName", out var ln) ? ln.GetString()
-                     : bistTicker;
+                     : ticker;
 
             var sector = q.TryGetProperty("sector", out var sec) ? sec.GetString() ?? "Diğer" : "Diğer";
 
             var quoteType = q.TryGetProperty("quoteType", out var qt) ? qt.GetString() ?? "" : "";
-            var type = quoteType is "ETF" or "MUTUALFUND" ? "FUND" : "STOCK";
+            var type = typeHint switch
+            {
+                SymbolType.FOREX     => "FOREX",
+                SymbolType.COMMODITY => "COMMODITY",
+                _ => quoteType is "ETF" or "MUTUALFUND" ? "FUND" : "STOCK"
+            };
 
             var price = q.TryGetProperty("regularMarketPrice", out var pr) ? pr.GetDouble() : 0.0;
 
-            logger.LogInformation("[MarketData] Symbol info fetched: {Ticker} — {Name} ({Type})", bistTicker, name, type);
-            return new SymbolInfo(name ?? bistTicker, sector, type, price);
+            logger.LogInformation("[MarketData] Symbol info fetched: {Ticker} — {Name} ({Type})", ticker, name, type);
+            return new SymbolInfo(name ?? ticker, sector, type, price);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "[MarketData] Symbol info fetch failed for {Ticker}", bistTicker);
+            logger.LogWarning(ex, "[MarketData] Symbol info fetch failed for {Ticker}", ticker);
             return null;
         }
     }

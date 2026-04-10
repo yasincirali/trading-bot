@@ -1,5 +1,5 @@
 export type SignalType = 'BUY' | 'SELL' | 'NEUTRAL';
-export type SymbolType = 'STOCK' | 'FUND';
+export type SymbolType = 'STOCK' | 'FUND' | 'FOREX' | 'COMMODITY';
 export type OrderType = 'BUY' | 'SELL';
 export type OrderStatus = 'PENDING' | 'FILLED' | 'CANCELLED' | 'FAILED';
 export type UserRole = 'USER' | 'ADMIN';

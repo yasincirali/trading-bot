@@ -67,12 +67,14 @@ public class TradingEngine(
                     return;
                 }
 
-                // Batch-fetch live prices for the entire watchlist (single HTTP call)
-                // Missing tickers (API failure) will fall back to last known DB price
-                var livePrices = await marketData.GetCurrentPricesAsync(cfg.Watchlist);
+                // Query symbols first (need Type for correct Yahoo ticker mapping)
                 var symbols = await db.BistSymbols
                     .Where(s => cfg.Watchlist.Contains(s.Ticker))
                     .ToListAsync(token);
+
+                // Batch-fetch live prices for the entire watchlist (single HTTP call)
+                // Missing tickers (API failure) will fall back to last known DB price
+                var livePrices = await marketData.GetCurrentPricesAsync(symbols);
                 foreach (var sym in symbols)
                     if (!livePrices.ContainsKey(sym.Ticker) && sym.LastPrice > 0)
                         livePrices[sym.Ticker] = sym.LastPrice;

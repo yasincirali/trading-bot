@@ -1,6 +1,29 @@
 import { useState } from 'react';
 import { useTradingStore } from '../../stores/tradingStore';
 import { useUiStore } from '../../stores/uiStore';
+import type { BistSymbol } from '../../types';
+
+const TYPE_LABELS: Record<string, string> = {
+  STOCK:     'Hisse Senetleri (BIST)',
+  FUND:      'Yatırım Fonları',
+  FOREX:     'Döviz',
+  COMMODITY: 'Emtia (Altın / Petrol)',
+};
+
+const PRICE_CURRENCY: Record<string, string> = {
+  STOCK:     'TRY',
+  FUND:      'TRY',
+  FOREX:     'TRY',
+  COMMODITY: 'USD',
+};
+
+function groupBy<T>(arr: T[], key: (item: T) => string): Record<string, T[]> {
+  return arr.reduce((acc, item) => {
+    const k = key(item);
+    (acc[k] ??= []).push(item);
+    return acc;
+  }, {} as Record<string, T[]>);
+}
 
 export function ManualOrderForm() {
   const { symbols, placeOrder } = useTradingStore();
@@ -11,8 +34,14 @@ export function ManualOrderForm() {
   const [bank, setBank] = useState('denizbank');
   const [loading, setLoading] = useState(false);
 
-  const selectedSymbol = symbols.find(s => s.ticker === ticker);
-  const estimatedTotal = selectedSymbol && quantity ? (selectedSymbol.lastPrice * parseFloat(quantity)).toFixed(2) : null;
+  const selectedSymbol = symbols.find((s: BistSymbol) => s.ticker === ticker);
+  const currency = selectedSymbol ? (PRICE_CURRENCY[selectedSymbol.type] ?? 'TRY') : 'TRY';
+  const estimatedTotal = selectedSymbol && quantity
+    ? (selectedSymbol.lastPrice * parseFloat(quantity)).toFixed(selectedSymbol.type === 'FOREX' ? 4 : 2)
+    : null;
+
+  const grouped = groupBy(symbols, (s: BistSymbol) => s.type);
+  const typeOrder = ['STOCK', 'FUND', 'FOREX', 'COMMODITY'];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,26 +61,36 @@ export function ManualOrderForm() {
 
   return (
     <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-      <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4">Place Order</h2>
+      <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-4">Emir Ver</h2>
       <form onSubmit={handleSubmit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Symbol</label>
+            <label className="text-xs text-gray-500 mb-1 block">Sembol</label>
             <select
               value={ticker}
               onChange={e => setTicker(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500"
               required
             >
-              <option value="">Select symbol...</option>
-              {symbols.map(s => (
-                <option key={s.ticker} value={s.ticker}>{s.ticker} — {s.name}</option>
-              ))}
+              <option value="">Sembol seç...</option>
+              {typeOrder.map(t => {
+                const group = grouped[t];
+                if (!group?.length) return null;
+                return (
+                  <optgroup key={t} label={TYPE_LABELS[t] ?? t}>
+                    {group.map((s: BistSymbol) => (
+                      <option key={s.ticker} value={s.ticker}>
+                        {s.ticker} — {s.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
             </select>
           </div>
 
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Order Type</label>
+            <label className="text-xs text-gray-500 mb-1 block">Emir Tipi</label>
             <div className="flex gap-2">
               {(['BUY', 'SELL'] as const).map(t => (
                 <button
@@ -64,7 +103,7 @@ export function ManualOrderForm() {
                       : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                   }`}
                 >
-                  {t}
+                  {t === 'BUY' ? 'AL' : 'SAT'}
                 </button>
               ))}
             </div>
@@ -73,21 +112,25 @@ export function ManualOrderForm() {
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Quantity</label>
+            <label className="text-xs text-gray-500 mb-1 block">
+              Miktar
+              {selectedSymbol?.type === 'FOREX' && <span className="ml-1 text-gray-600">(birim)</span>}
+              {selectedSymbol?.type === 'COMMODITY' && <span className="ml-1 text-gray-600">(ons/varil)</span>}
+            </label>
             <input
               type="number"
-              min="1"
-              step="1"
+              min="0.001"
+              step={selectedSymbol?.type === 'FOREX' || selectedSymbol?.type === 'COMMODITY' ? '0.001' : '1'}
               value={quantity}
               onChange={e => setQuantity(e.target.value)}
-              placeholder="e.g. 10"
+              placeholder={selectedSymbol?.type === 'FOREX' ? 'örn. 1000' : 'örn. 10'}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500"
               required
             />
           </div>
 
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Bank Adapter</label>
+            <label className="text-xs text-gray-500 mb-1 block">Banka</label>
             <select
               value={bank}
               onChange={e => setBank(e.target.value)}
@@ -101,10 +144,21 @@ export function ManualOrderForm() {
         </div>
 
         {selectedSymbol && (
-          <div className="bg-gray-800 rounded-lg px-3 py-2 text-xs text-gray-400 flex justify-between">
-            <span>Last Price: <span className="text-gray-200">{selectedSymbol.lastPrice.toFixed(2)} TRY</span></span>
+          <div className="bg-gray-800 rounded-lg px-3 py-2 text-xs text-gray-400 flex justify-between items-center">
+            <span>
+              Son Fiyat:{' '}
+              <span className="text-gray-200">
+                {selectedSymbol.lastPrice.toFixed(
+                  selectedSymbol.type === 'FOREX' ? 4 : selectedSymbol.type === 'COMMODITY' ? 2 : 2
+                )}{' '}
+                {currency}
+              </span>
+            </span>
             {estimatedTotal && (
-              <span>Est. Total: <span className="text-gray-200">{estimatedTotal} TRY</span></span>
+              <span>
+                Tahmini Toplam:{' '}
+                <span className="text-gray-200">{estimatedTotal} {currency}</span>
+              </span>
             )}
           </div>
         )}
@@ -118,7 +172,7 @@ export function ManualOrderForm() {
               : 'bg-red-600 hover:bg-red-700 text-white'
           } disabled:opacity-40`}
         >
-          {loading ? 'Placing...' : `Place ${type} Order`}
+          {loading ? 'İşleniyor...' : `${type === 'BUY' ? 'AL' : 'SAT'} Emri Ver`}
         </button>
       </form>
     </div>
